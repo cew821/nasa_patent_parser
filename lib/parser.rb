@@ -28,8 +28,8 @@ def parse_patent_ids_from_page(category_link, page = 0, patent_ids = [])
     response["results"].each do |result|
       patent_ids << result[4]
     end
-    # page += 1
-    # parse_patent_ids_from_page(category_link, page, patent_ids)
+    page += 1
+    parse_patent_ids_from_page(category_link, page, patent_ids)
   end
   patent_ids
 end
@@ -37,19 +37,28 @@ end
 def get_patent_details(patent_id)
   uri = BASE_URI + "/svr/search.php?d=patent&r=geturl&q=#{patent_id}"
   response = JSON.parse(open(uri).read)["results"]
-  puts "retrieved patent #{patent_id} with results #{response}"
   PatentData.new(response)
 end
 
-def write_patent_details_to_csv(patents = [], filename = "patents.csv")
-  CSV.open(filename, "w+") do |csv|
-    csv << PatentData.headers
+def write_patent_details_to_csv(patents = [], filename = "patents.csv", file_option = "w+")
+  CSV.open(filename, file_option) do |csv|
     patents.each do |patent|
       csv << patent.values
+      puts "Wrote patent #{patent.title} to file"
     end
   end
 end
 
+def write_csv_file_and_header(filename = "patents.csv")
+  CSV.open(filename, "w+") do |csv|
+    csv << PatentData.headers
+  end
+end
+
+def get_and_write_patent(patent_id)
+  patent = get_patent_details(patent_id)
+  write_patent_details_to_csv([patent], "patents.csv", "a+")
+end
 
 ContactInfo = Struct.new :facility, :office, :address1, :address2, :city_state_zip, :contact_name, :contact_email, :contact_phone
 
@@ -59,7 +68,7 @@ class PatentData
   def initialize(json)
     @category = json["category"]
     @abstract = abstract_cleanser(json["abstract"])
-    @title = json["title"]
+    @title = json["title"].squeeze(" ")
     @reference_number = json["reference_number"]
     @center = json["center"]
     @patent_number = json["patent_number"]
@@ -82,6 +91,7 @@ class PatentData
   
     def abstract_cleanser(abstract_raw_text)
       # The abstract field returned by NASA's API includes text that is stripped out by NASA's portal.js before it is rendered; this functionality is ported here.
+      return if abstract_raw_text == nil
 
       abstract_raw_text.gsub!(/[-]*as filed in application[ s:-]*/i,'')
       abstract_raw_text.gsub!(/[-]*as filed in patent application[s:-]*/i,'')
@@ -89,6 +99,7 @@ class PatentData
       abstract_raw_text.gsub!(/[-]*patent application as filed[:-]*/i,'')
       abstract_raw_text.gsub!(/-------------------------------[-]*/,'')
       abstract_raw_text.gsub!(/[-]*as filed[-]*/i,'')
+      abstract_raw_text.squeeze!(" ")
       abstract_raw_text
     end
 
@@ -175,12 +186,20 @@ class PatentData
     end
 end
 
-patent = get_patent_details("patent_LAR-18143-1")
-patents = [patent]
-write_patent_details_to_csv(patents)
+# patent = get_patent_details("patent_LAR-18143-1")
+# patents = [patent]
+# write_patent_details_to_csv(patents)
 
-# links = get_category_query_terms
-# puts parse_patent_ids_from_page(links.first)
+def write_all_patents_to_file
+  write_csv_file_and_header
+  links = get_category_query_terms
+  links.each do |link| 
+    puts "fetching patents for category: #{link}"
+    patent_ids = parse_patent_ids_from_page(link)
+    patent_ids.each { |patent_id| get_and_write_patent(patent_id)}
+  end
+end
 
+write_all_patents_to_file
 # get_categories
 # parse_page_of_links
