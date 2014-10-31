@@ -5,6 +5,7 @@
 require 'open-uri'
 require 'nokogiri'
 require 'json'
+require 'csv'
 
 BASE_URI = 'http://technology.nasa.gov'
 
@@ -40,6 +41,16 @@ def get_patent_details(patent_id)
   PatentData.new(response)
 end
 
+def write_patent_details_to_csv(patents = [], filename = "patents.csv")
+  CSV.open(filename, "w+") do |csv|
+    csv << PatentData.headers
+    patents.each do |patent|
+      csv << patent.values
+    end
+  end
+end
+
+
 ContactInfo = Struct.new :facility, :office, :address1, :address2, :city_state_zip, :contact_name, :contact_email, :contact_phone
 
 class PatentData
@@ -57,20 +68,32 @@ class PatentData
     @contact_info = get_contact_info_from_center(@center.downcase)
   end
 
+  def values
+    values = [@category, @abstract, @title, @reference_number, @center, @patent_number, @serial_number, @expiration_date]
+    @contact_info.values.each { |v| values << v }
+    values
+  end
+
+  def self.headers
+    headers = ["Category", "Abstract", "Title", "Reference Number", "Center", "Patent Number", "Serial Number", "Expiration Date", "Facility", "Office", "Address1", "Address2", "City State Zip", "Contact Name", "Contact Email", "Contact Phone"]
+  end
+
   private
   
     def abstract_cleanser(abstract_raw_text)
+      # The abstract field returned by NASA's API includes text that is stripped out by NASA's portal.js before it is rendered; this functionality is ported here.
+
       abstract_raw_text.gsub!(/[-]*as filed in application[ s:-]*/i,'')
       abstract_raw_text.gsub!(/[-]*as filed in patent application[s:-]*/i,'')
       abstract_raw_text.gsub!(/[-]*as filed in the patent application[s:-]*/i,'')
       abstract_raw_text.gsub!(/[-]*patent application as filed[:-]*/i,'')
       abstract_raw_text.gsub!(/-------------------------------[-]*/,'')
       abstract_raw_text.gsub!(/[-]*as filed[-]*/i,'')
-      
       abstract_raw_text
     end
 
     def get_contact_info_from_center(center)
+      # patent contact info ported from the "Portal.js" file that powers technology.nasa.gov (available here: http://technology.nasa.gov/js/portal). Contact info ported from the get_pcon(c) function.
       
       contact = ContactInfo.new
 
@@ -153,8 +176,8 @@ class PatentData
 end
 
 patent = get_patent_details("patent_LAR-18143-1")
-puts patent.inspect
-puts patent.contact_info.city_state_zip
+patents = [patent]
+write_patent_details_to_csv(patents)
 
 # links = get_category_query_terms
 # puts parse_patent_ids_from_page(links.first)
